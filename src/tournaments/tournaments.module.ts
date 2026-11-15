@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
-import { TournamentsService } from './tournaments.sevice';
 import { TournamentsController } from './tournaments.controller';
+import { TournamentsService } from './tournaments.sevice';
 import { DatabaseModule } from '../database/database.module';
 
 @Module({

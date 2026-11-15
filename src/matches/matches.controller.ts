@@ -1,37 +1,44 @@
-
-import {Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe,} from '@nestjs/common';
-
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  UseGuards,
+} from '@nestjs/common';
 import { MatchesService } from './matches.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard)
 @Controller('matches')
 export class MatchesController {
-    constructor(private readonly matchesService: MatchesService) {}
+  constructor(private readonly matchesService: MatchesService) {}
 
-    @Get()
-    getAll() {
+  @Get()
+  getAll() {
     return this.matchesService.getAll();
-}
+  }
 
-    @Get(':id')
-    getOne(@Param('id', ParseIntPipe) id: number) {
+  @Get(':id')
+  getOne(@Param('id', ParseIntPipe) id: number) {
     return this.matchesService.findById(id);
-}
+  }
 
-    @Post()
-    create(@Body() body: any) {
+  @Post()
+  create(@Body() body: any) {
     return this.matchesService.createMatch(body);
-    }
+  }
 
-    @Put(':id')
-    update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: any,
-) {
+  @Put(':id')
+  update(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
     return this.matchesService.updateMatch(id, body);
-}
+  }
 
-    @Delete(':id')
-    remove(@Param('id', ParseIntPipe) id: number) {
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) {
     return this.matchesService.deleteMatch(id);
-    }
-}   
+  }
+}

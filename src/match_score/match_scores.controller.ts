@@ -1,4 +1,3 @@
-
 import {
   Controller,
   Get,
@@ -8,15 +7,15 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
-
 import { MatchScoresService } from './match_scores.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard)
 @Controller('match-scores')
 export class MatchScoresController {
-  constructor(
-    private readonly matchScoresService: MatchScoresService,
-  ) {}
+  constructor(private readonly matchScoresService: MatchScoresService) {}
 
   @Get()
   getAll() {
@@ -34,10 +33,7 @@ export class MatchScoresController {
   }
 
   @Put(':id')
-  update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: any,
-  ) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
     return this.matchScoresService.updateScore(id, body);
   }
 

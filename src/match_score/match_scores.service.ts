@@ -1,4 +1,3 @@
-
 import {
   Injectable,
   NotFoundException,
@@ -6,6 +5,14 @@ import {
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { handleDbError } from '../common/db-error';
+
+const UPDATABLE = [
+  'match_id',
+  'set_number',
+  'player_one_score',
+  'player_two_score',
+];
 
 @Injectable()
 export class MatchScoresService {
@@ -25,21 +32,14 @@ export class MatchScoresService {
       'SELECT * FROM match_scores WHERE score_id = ?',
       [id],
     );
-
     if (rows.length === 0) {
-      throw new NotFoundException('Match score not found');
+      throw new NotFoundException(`Score #${id} not found`);
     }
-
     return rows[0];
   }
 
   async createScore(body: any) {
-    const {
-      match_id,
-      set_number,
-      player_one_score,
-      player_two_score,
-    } = body;
+    const { match_id, set_number, player_one_score, player_two_score } = body;
 
     if (
       match_id == null ||
@@ -52,73 +52,59 @@ export class MatchScoresService {
       );
     }
 
-    const [result] = await this.pool().execute<ResultSetHeader>(
-      `INSERT INTO match_scores
-       (match_id, set_number, player_one_score, player_two_score)
-       VALUES (?, ?, ?, ?)`,
-      [
-        match_id,
-        set_number,
-        player_one_score,
-        player_two_score,
-      ],
-    );
-
-    return this.findById(result.insertId);
+    try {
+      const [result] = await this.pool().execute<ResultSetHeader>(
+        `INSERT INTO match_scores
+         (match_id, set_number, player_one_score, player_two_score)
+         VALUES (?, ?, ?, ?)`,
+        [match_id, set_number, player_one_score, player_two_score],
+      );
+      return this.findById(result.insertId);
+    } catch (err) {
+      handleDbError(err);
+    }
   }
 
   async updateScore(id: number, body: any) {
     await this.findById(id);
 
-    const allowedFields = [
-      'match_id',
-      'set_number',
-      'player_one_score',
-      'player_two_score',
-    ];
-
     const fields: string[] = [];
     const values: any[] = [];
 
-    for (const field of allowedFields) {
-      if (
-        Object.prototype.hasOwnProperty.call(body, field) &&
-        body[field] !== undefined
-      ) {
+    for (const field of UPDATABLE) {
+      if (body[field] !== undefined) {
         fields.push(`${field} = ?`);
         values.push(body[field]);
       }
     }
 
     if (fields.length === 0) {
-      throw new BadRequestException(
-        'Provide at least one field to update',
-      );
+      throw new BadRequestException('Provide at least one field to update');
     }
 
-    values.push(id);
-
-    await this.pool().execute(
-      `UPDATE match_scores
-      SET ${fields.join(', ')}
-      WHERE score_id = ?`,
-      values,
-    );
+    try {
+      values.push(id);
+      await this.pool().execute(
+        `UPDATE match_scores SET ${fields.join(', ')} WHERE score_id = ?`,
+        values,
+      );
+    } catch (err) {
+      handleDbError(err);
+    }
 
     return this.findById(id);
   }
 
   async deleteScore(id: number) {
     await this.findById(id);
-
-    const [result] = await this.pool().execute<ResultSetHeader>(
-      'DELETE FROM match_scores WHERE score_id = ?',
-      [id],
-    );
-
-    return {
-      message: 'Match score deleted successfully',
-      deleted: result.affectedRows > 0,
-    };
+    try {
+      await this.pool().execute<ResultSetHeader>(
+        'DELETE FROM match_scores WHERE score_id = ?',
+        [id],
+      );
+      return { message: 'Deleted' };
+    } catch (err) {
+      handleDbError(err);
+    }
   }
 }

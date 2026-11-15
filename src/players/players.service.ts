@@ -1,6 +1,37 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { RowDataPacket, OkPacket } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { handleDbError } from '../common/db-error';
+
+export interface PlayerInput {
+  user_id?: number | null;
+  first_name?: string;
+  last_name?: string;
+  gender?: string;
+  birth_date?: string | null;
+  contact_number?: string | null;
+  ranking_points?: number | null;
+}
+
+export interface CreatePlayerInput extends PlayerInput {
+  first_name: string;
+  last_name: string;
+  gender: string;
+}
+
+const COLUMNS = `player_id, user_id, first_name, last_name, gender,
+  DATE_FORMAT(birth_date, '%Y-%m-%d') AS birth_date,
+  contact_number, ranking_points`;
+
+const UPDATABLE: (keyof PlayerInput)[] = [
+  'user_id',
+  'first_name',
+  'last_name',
+  'gender',
+  'birth_date',
+  'contact_number',
+  'ranking_points',
+];
 
 @Injectable()
 export class PlayersService {
@@ -8,142 +39,88 @@ export class PlayersService {
 
   private pool = () => this.db.getPool();
 
-  // CREATE
-  async createUser(
-    player_id: string,
-    first_name: string,
-    last_name: string,
-    gender: string,
-    birth_date: string,
-    contact_number: string,
-    ranking_points: number | null,
-  ) {
-    await this.pool().execute<OkPacket>(
-      `INSERT INTO players
-      (player_id, first_name, last_name, gender, birth_date, contact_number, ranking_points)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        player_id,
-        first_name,
-        last_name,
-        gender,
-        birth_date,
-        contact_number,
-        ranking_points,
-      ],
-    );
-
-    return {
-      player_id,
-      first_name,
-      last_name,
-    };
-  }
-
-  // GET ONE
-  async findById(player_id: string) {
-    const [rows] = await this.pool().execute<RowDataPacket[]>(
-      `SELECT player_id, first_name, last_name, gender, birth_date,
-      contact_number, ranking_points
-      FROM players
-      WHERE player_id = ?`,
-      [player_id],
-    );
-
-    return rows[0];
-  }
-
-  // GET ALL
   async getAll() {
     const [rows] = await this.pool().execute<RowDataPacket[]>(
-      `SELECT player_id, first_name, last_name, gender, DATE_FORMAT(birth_date, '%Y-%m-%d') AS birth_date,
-      contact_number, ranking_points
-      FROM players`,
+      `SELECT ${COLUMNS} FROM players ORDER BY player_id DESC`,
     );
-
     return rows;
   }
 
-  // UPDATE
-  async updateUser(
-    player_id: string,
-    partial: {
-      player_id?: string;
-      first_name?: string;
-      last_name?: string;
-      gender?: string;
-      birth_date?: string;
-      contact_number?: string;
-      ranking_points?: number | null;
-    },
-  ) {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (partial.player_id !== undefined) {
-      fields.push('player_id = ?');
-      values.push(partial.player_id);
-    }
-
-    if (partial.first_name !== undefined) {
-      fields.push('first_name = ?');
-      values.push(partial.first_name);
-    }
-
-    if (partial.last_name !== undefined) {
-      fields.push('last_name = ?');
-      values.push(partial.last_name);
-    }
-
-    if (partial.gender !== undefined) {
-      fields.push('gender = ?');
-      values.push(partial.gender);
-    }
-
-    if (partial.birth_date !== undefined) {
-      fields.push('birth_date = ?');
-      values.push(partial.birth_date);
-    }
-
-    if (partial.contact_number !== undefined) {
-      fields.push('contact_number = ?');
-      values.push(partial.contact_number);
-    }
-
-    if (partial.ranking_points !== undefined) {
-      fields.push('ranking_points = ?');
-      values.push(partial.ranking_points);
-    }
-
-    if (fields.length === 0) {
-      return this.findById(player_id);
-    }
-
-    values.push(player_id);
-
-    await this.pool().execute(
-      `UPDATE players
-       SET ${fields.join(', ')}
-       WHERE player_id = ?`,
-      values,
-    );
-
-    return this.findById(partial.player_id ?? player_id);
-  }
-
-  // DELETE
-  async deleteUser(player_id: string) {
-    const [result] = await this.pool().execute<OkPacket>(
-      'DELETE FROM players WHERE player_id = ?',
+  async findById(player_id: number) {
+    const [rows] = await this.pool().execute<RowDataPacket[]>(
+      `SELECT ${COLUMNS} FROM players WHERE player_id = ?`,
       [player_id],
     );
+    if (rows.length === 0) {
+      throw new NotFoundException(`Player #${player_id} not found`);
+    }
+    return rows[0];
+  }
 
-    return {
-      success: result.affectedRows > 0,
-      message:
-        result.affectedRows > 0
-          ? 'Player deleted successfully'
-          : 'Player not found',
-    };
+  async create(data: CreatePlayerInput) {
+    try {
+      const [result] = await this.pool().execute<ResultSetHeader>(
+        `INSERT INTO players
+         (user_id, first_name, last_name, gender, birth_date, contact_number, ranking_points)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.user_id ?? null,
+          data.first_name,
+          data.last_name,
+          data.gender,
+          data.birth_date ?? null,
+          data.contact_number ?? null,
+          data.ranking_points ?? 0,
+        ],
+      );
+      return this.findById(result.insertId);
+    } catch (err) {
+      handleDbError(err);
+    }
+  }
+
+  async update(player_id: number, data: PlayerInput) {
+    const fields: string[] = [];
+    const values: (string | number | null)[] = [];
+
+    for (const col of UPDATABLE) {
+      const value = data[col];
+      if (value !== undefined) {
+        fields.push(`${col} = ?`);
+        values.push(value);
+      }
+    }
+
+    if (fields.length > 0) {
+      try {
+        values.push(player_id);
+        const [result] = await this.pool().execute<ResultSetHeader>(
+          `UPDATE players SET ${fields.join(', ')} WHERE player_id = ?`,
+          values,
+        );
+        if (result.affectedRows === 0) {
+          throw new NotFoundException(`Player #${player_id} not found`);
+        }
+      } catch (err) {
+        handleDbError(err);
+      }
+    }
+
+    return this.findById(player_id);
+  }
+
+  async remove(player_id: number) {
+    try {
+      const [result] = await this.pool().execute<ResultSetHeader>(
+        'DELETE FROM players WHERE player_id = ?',
+        [player_id],
+      );
+      if (result.affectedRows === 0) {
+        throw new NotFoundException(`Player #${player_id} not found`);
+      }
+      return { message: 'Deleted' };
+    } catch (err) {
+      handleDbError(err);
+    }
   }
 }

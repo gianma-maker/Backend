@@ -1,8 +1,22 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
-import { PlayersService } from './players.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  PlayersService,
+  PlayerInput,
+  CreatePlayerInput,
+} from './players.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
-
+@UseGuards(JwtAuthGuard)
 @Controller('players')
 export class PlayersController {
   constructor(private playersService: PlayersService) {}
@@ -12,31 +26,23 @@ export class PlayersController {
     return this.playersService.getAll();
   }
 
-  @Get(':player_id')
-  getOne(@Param('player_id') player_id: string) {
-    return this.playersService.findById(player_id);
+  @Get(':id')
+  getOne(@Param('id', ParseIntPipe) id: number) {
+    return this.playersService.findById(id);
   }
 
   @Post()
-  create(@Body() body: any) {
-    return this.playersService.createUser(
-      body.player_id,
-      body.first_name,
-      body.last_name,
-      body.gender,
-      body.birth_date,
-      body.contact_number,
-      body.ranking_points,
-    );
+  create(@Body() body: CreatePlayerInput) {
+    return this.playersService.create(body);
   }
 
-  @Put(':player_id')
-  update(@Param('player_id') player_id: string, @Body() body: any) {
-    return this.playersService.updateUser(player_id, body);
+  @Put(':id')
+  update(@Param('id', ParseIntPipe) id: number, @Body() body: PlayerInput) {
+    return this.playersService.update(id, body);
   }
 
-  @Delete(':player_id')
-  remove(@Param('player_id') player_id: string) {
-    return this.playersService.deleteUser(player_id);
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.playersService.remove(id);
   }
 }

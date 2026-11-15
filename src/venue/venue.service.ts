@@ -1,7 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { RowDataPacket, OkPacket } from 'mysql2';
-import * as bcrypt from 'bcryptjs';
+import { RowDataPacket, ResultSetHeader } from 'mysql2';
+
+export interface VenueInput {
+  venue_address?: string;
+  location?: string;
+  capacity?: number | null;
+}
+
+export interface CreateVenueInput {
+  venue_address: string;
+  location: string;
+  capacity?: number | null;
+}
 
 @Injectable()
 export class VenueService {
@@ -9,95 +20,71 @@ export class VenueService {
 
   private pool = () => this.db.getPool();
 
- async createUser(venue_address: string, location: string, capacity: number) {
-  const [result] = await this.pool().execute<OkPacket>(
-    'INSERT INTO venue (venue_address, location, capacity) VALUES (?, ?, ?)',
-    [venue_address, location, capacity],
-  );
-
-  return {
-    venue_id: result.insertId,
-    venue_address,
-    location,
-    capacity,
-  };
-}
-
-  async findByUsername(venue_id: string) {
-    const [rows] = await this.pool().execute<RowDataPacket[]>(
-      'SELECT venue_id, venue_address, location, capacity FROM venue WHERE venue_id = ?',
-      [venue_id],
-    );
-    return rows[0];
-  }
-
-  async findByaddress(venue_address: string) {
-    const [rows] = await this.pool().execute<RowDataPacket[]>(
-      'SELECT venue_id, venue_address, location, capacity FROM venue WHERE venue_address = ?',
-      [venue_address],
-    );
-    return rows[0];
-  }
-
   async getAll() {
     const [rows] = await this.pool().execute<RowDataPacket[]>(
-      'SELECT venue_id, venue_address, location, capacity FROM venue',
+      'SELECT venue_id, venue_address, location, capacity FROM venue ORDER BY venue_id DESC',
     );
     return rows;
   }
 
-  async updateUser(venue_address: string, partial: { venue_address?: string; location?: string; capacity?: number }) {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (partial.venue_address) {
-      fields.push('venue_address = ?');
-      values.push(partial.venue_address);
-    }
-
-    if (partial.location) {
-      fields.push('location = ?');
-      values.push(partial.location);
-    }
-
-    if (partial.capacity !== undefined) {
-      fields.push('capacity = ?');
-      values.push(partial.capacity);
-    }
-
-    if (fields.length === 0) return await this.findByaddress(venue_address);
-
-    values.push(venue_address);
-
-    const sql = `UPDATE venue SET ${fields.join(', ')} WHERE venue_id = ?`;
-
-    await this.pool().execute(sql, values);
-
-    return this.findByaddress(venue_address);
-  }
-
-  async deleteUser(venue_id: string) {
-  const [res] = await this.pool().execute<OkPacket>(
-    'DELETE FROM venue WHERE venue_id = ?',
-    [venue_id],
-  );
-
-  return res.affectedRows > 0;
-}
-
-  async setRefreshToken(venue_id: string, refreshToken: string | null) {
-    await this.pool().execute(
-      'UPDATE venue SET refresh_token = ? WHERE venue_id = ?',
-      [refreshToken, venue_id],
-    );
-  }
-
-  async findByRefreshToken(refreshToken: string) {
+  async findById(venue_id: number) {
     const [rows] = await this.pool().execute<RowDataPacket[]>(
-      'SELECT venue_id, venue_address, location, capacity FROM venue WHERE refresh_token = ?',
-      [refreshToken],
+      'SELECT venue_id, venue_address, location, capacity FROM venue WHERE venue_id = ?',
+      [venue_id],
     );
-
+    if (rows.length === 0) {
+      throw new NotFoundException(`Venue #${venue_id} not found`);
+    }
     return rows[0];
+  }
+
+  async create(data: CreateVenueInput) {
+    const [result] = await this.pool().execute<ResultSetHeader>(
+      'INSERT INTO venue (venue_address, location, capacity) VALUES (?, ?, ?)',
+      [data.venue_address, data.location, data.capacity ?? 1],
+    );
+    return this.findById(result.insertId);
+  }
+
+  async update(venue_id: number, data: VenueInput) {
+    const fields: string[] = [];
+    const values: (string | number | null)[] = [];
+
+    if (data.venue_address !== undefined) {
+      fields.push('venue_address = ?');
+      values.push(data.venue_address);
+    }
+    if (data.location !== undefined) {
+      fields.push('location = ?');
+      values.push(data.location);
+    }
+    if (data.capacity !== undefined) {
+      fields.push('capacity = ?');
+      values.push(data.capacity ?? 1);
+    }
+
+    if (fields.length > 0) {
+      values.push(venue_id);
+      const [result] = await this.pool().execute<ResultSetHeader>(
+        `UPDATE venue SET ${fields.join(', ')} WHERE venue_id = ?`,
+        values,
+      );
+      if (result.affectedRows === 0) {
+        throw new NotFoundException(`Venue #${venue_id} not found`);
+      }
+    }
+
+    return this.findById(venue_id);
+  }
+
+  async remove(venue_id: number) {
+    const [result] = await this.pool().execute<ResultSetHeader>(
+      'DELETE FROM venue WHERE venue_id = ?',
+      [venue_id],
+    );
+    if (result.affectedRows === 0) {
+      throw new NotFoundException(`Venue #${venue_id} not found`);
+    }
+    return { message: 'Deleted' };
   }
 }
